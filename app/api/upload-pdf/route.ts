@@ -1,16 +1,37 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import { writeFile, mkdir } from "fs/promises";
+import cloudinary from "@/lib/cloudinary";
 
 export const runtime = "nodejs";
 
-function makeSafeFileName(fileName: string) {
-  const nameWithoutExt = fileName
-    .replace(/\.[^/.]+$/, "")
-    .replace(/[^a-zA-Z0-9-_]/g, "-")
-    .toLowerCase();
+function uploadPdf(buffer: Buffer, fileName: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const safeName = fileName
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[^a-zA-Z0-9-_]/g, "-")
+      .toLowerCase();
 
-  return `${Date.now()}-${nameWithoutExt}.pdf`;
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "raw",
+        public_id: `rak-baca/pdfs/${Date.now()}-${safeName}.pdf`,
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        if (!result?.secure_url) {
+          reject(new Error("URL PDF tidak ditemukan"));
+          return;
+        }
+
+        resolve(result.secure_url);
+      }
+    );
+
+    uploadStream.end(buffer);
+  });
 }
 
 export async function POST(req: Request) {
@@ -32,25 +53,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    const safeFileName = makeSafeFileName(file.name);
-
-    const uploadDir = path.join(
-      process.cwd(),
-      "public",
-      "uploads",
-      "pdfs"
-    );
-
-    await mkdir(uploadDir, { recursive: true });
-
-    const filePath = path.join(uploadDir, safeFileName);
-
-    await writeFile(filePath, buffer);
-
-    const pdfUrl = `/uploads/pdfs/${safeFileName}`;
+    const pdfUrl = await uploadPdf(buffer, file.name);
 
     return NextResponse.json(
       {

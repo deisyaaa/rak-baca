@@ -23,9 +23,16 @@ export default function DashboardPage() {
     try {
       const res = await fetch("/api/books");
       const data = await res.json();
-      setBooks(data);
+
+      if (Array.isArray(data)) {
+        setBooks(data);
+      } else {
+        console.error("Data books bukan array:", data);
+        setBooks([]);
+      }
     } catch (error) {
       console.error("Gagal mengambil data buku:", error);
+      setBooks([]);
     }
   }
 
@@ -75,7 +82,6 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-7xl px-6 py-8">
-        {/* Header */}
         <header className="mb-8 rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
           <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <div>
@@ -111,7 +117,6 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {/* Statistik */}
         <section className="mb-8 grid gap-5 md:grid-cols-3">
           <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-lg">
             <p className="text-sm text-slate-400">Total Buku</p>
@@ -144,7 +149,6 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Filter */}
         <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <div className="grid gap-4 md:grid-cols-[1fr_260px]">
             <div>
@@ -181,7 +185,6 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Daftar Buku */}
         {filteredBooks.length === 0 ? (
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
             <h2 className="text-2xl font-bold text-white">
@@ -205,7 +208,6 @@ export default function DashboardPage() {
                 key={book._id}
                 className="group overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-lg transition hover:-translate-y-1 hover:border-blue-500/60 hover:shadow-blue-950/40"
               >
-                {/* Cover Buku - tidak terpotong */}
                 <div className="relative flex h-96 items-center justify-center overflow-hidden bg-slate-950 p-4">
                   <img
                     src={book.coverUrl}

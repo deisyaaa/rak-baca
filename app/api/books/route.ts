@@ -3,6 +3,8 @@ import { connectDB } from "@/lib/mongodb";
 import Book from "@/models/Book";
 import cloudinary from "@/lib/cloudinary";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   try {
     await connectDB();
@@ -35,7 +37,10 @@ export async function POST(req: Request) {
 
     if (!title || !author || !category || !description || !file) {
       return NextResponse.json(
-        { message: "Judul, penulis, kategori, deskripsi, dan cover wajib diisi" },
+        {
+          message:
+            "Judul, penulis, kategori, deskripsi, dan cover wajib diisi",
+        },
         { status: 400 }
       );
     }
