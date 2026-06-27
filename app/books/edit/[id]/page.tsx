@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -16,8 +16,9 @@ type Book = {
 
 export default function EditBookPage() {
   const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+  const params = useParams();
+
+  const id = params.id as string;
 
   const [form, setForm] = useState({
     title: "",
@@ -26,47 +27,72 @@ export default function EditBookPage() {
     description: "",
   });
 
-  const [oldCoverUrl, setOldCoverUrl] = useState("");
-  const [oldPdfUrl, setOldPdfUrl] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
+  const [coverPreview, setCoverPreview] = useState("");
+  const [pdfUrl, setPdfUrl] = useState("");
+
   const [cover, setCover] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [successOpen, setSuccessOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  async function getBook() {
+    try {
+      const res = await fetch(`/api/books/${id}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrorMessage(data.message || "Gagal mengambil data buku");
+        return;
+      }
+
+      const book: Book = data.book || data;
+
+      setForm({
+        title: book.title || "",
+        author: book.author || "",
+        category: book.category || "",
+        description: book.description || "",
+      });
+
+      setCoverUrl(book.coverUrl || "");
+      setCoverPreview(book.coverUrl || "");
+      setPdfUrl(book.pdfUrl || "");
+    } catch (error) {
+      console.error("GET BOOK ERROR:", error);
+      setErrorMessage("Terjadi kesalahan saat mengambil data buku");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function getBook() {
-      try {
-        const res = await fetch(`/api/books/${id}`);
-        const data: Book = await res.json();
-
-        setForm({
-          title: data.title || "",
-          author: data.author || "",
-          category: data.category || "",
-          description: data.description || "",
-        });
-
-        setOldCoverUrl(data.coverUrl || "");
-        setOldPdfUrl(data.pdfUrl || "");
-      } catch (error) {
-        console.error("GET BOOK ERROR:", error);
-        alert("Gagal mengambil data buku");
-      } finally {
-        setLoading(false);
-      }
-    }
-
     if (id) {
       getBook();
     }
   }, [id]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleCoverChange(file: File | null) {
+    setCover(file);
+
+    if (file) {
+      setCoverPreview(URL.createObjectURL(file));
+    } else {
+      setCoverPreview(coverUrl);
+    }
+  }
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setUpdating(true);
+    setSaving(true);
+    setErrorMessage("");
 
     try {
-      let pdfUrl = oldPdfUrl;
+      let finalPdfUrl = pdfUrl;
 
       if (pdfFile) {
         const pdfFormData = new FormData();
@@ -80,12 +106,11 @@ export default function EditBookPage() {
         const pdfData = await pdfRes.json();
 
         if (!pdfRes.ok) {
-          alert(pdfData.message || "Upload PDF gagal");
-          setUpdating(false);
+          setErrorMessage(pdfData.message || "Upload PDF gagal");
           return;
         }
 
-        pdfUrl = pdfData.pdfUrl;
+        finalPdfUrl = pdfData.pdfUrl;
       }
 
       const formData = new FormData();
@@ -93,7 +118,8 @@ export default function EditBookPage() {
       formData.append("author", form.author);
       formData.append("category", form.category);
       formData.append("description", form.description);
-      formData.append("pdfUrl", pdfUrl);
+      formData.append("pdfUrl", finalPdfUrl);
+      formData.append("coverUrl", coverUrl);
 
       if (cover) {
         formData.append("cover", cover);
@@ -107,83 +133,109 @@ export default function EditBookPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.message || "Gagal mengubah buku");
+        setErrorMessage(data.message || "Gagal mengupdate buku");
         return;
       }
 
-      alert("Buku berhasil diperbarui");
-      router.push("/dashboard");
+      setSuccessOpen(true);
     } catch (error) {
       console.error("UPDATE BOOK ERROR:", error);
-      alert("Terjadi kesalahan saat mengubah buku");
+      setErrorMessage("Terjadi kesalahan saat mengupdate buku");
     } finally {
-      setUpdating(false);
+      setSaving(false);
     }
+  }
+
+  function handleCloseSuccess() {
+    setSuccessOpen(false);
+    router.push("/dashboard");
+    router.refresh();
   }
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 px-8 py-6 shadow-xl">
-          <p className="text-sm text-slate-300">Memuat data buku...</p>
+      <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-sm text-slate-400">Memuat data...</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
+      {successOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center shadow-xl">
+            <h2 className="text-xl font-bold text-white">Berhasil</h2>
+
+            <p className="mt-2 text-sm text-slate-300">
+              Buku berhasil diperbarui.
+            </p>
+
+            <button
+              type="button"
+              onClick={handleCloseSuccess}
+              className="mt-6 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center shadow-xl">
+            <h2 className="text-xl font-bold text-white">Gagal</h2>
+
+            <p className="mt-2 text-sm text-slate-300">{errorMessage}</p>
+
+            <button
+              type="button"
+              onClick={() => setErrorMessage("")}
+              className="mt-6 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto max-w-5xl">
+        <header className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-yellow-400">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
               Rak Baca
             </p>
 
-            <h1 className="text-3xl font-bold md:text-4xl">
-              Edit Data Buku
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-              Perbarui informasi buku yang sudah tersimpan. Kamu dapat mengubah
-              judul, penulis, kategori, deskripsi, cover, dan file PDF jika
-              diperlukan.
-            </p>
+            <h1 className="mt-2 text-3xl font-bold">Edit Buku</h1>
           </div>
 
           <Link
             href="/dashboard"
-            className="inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:border-blue-500 hover:text-white"
+            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-900 hover:text-white"
           >
-            ← Kembali ke Dashboard
+            Kembali
           </Link>
-        </div>
+        </header>
 
-        <div className="grid gap-8 lg:grid-cols-[1.25fr_0.75fr]">
-          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white">
-                Form Edit Buku
-              </h2>
-              <p className="mt-2 text-sm text-slate-400">
-                Data lama akan tetap tersimpan jika kamu tidak mengganti cover
-                atau file PDF.
-              </p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <form
+            onSubmit={handleSubmit}
+            className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6"
+          >
+            <div className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-300">
                   Judul Buku
                 </label>
+
                 <input
                   type="text"
                   value={form.title}
-                  onChange={(e) =>
-                    setForm({ ...form, title: e.target.value })
-                  }
-                  placeholder="Masukkan judul buku"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-blue-500"
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                   required
                 />
               </div>
@@ -193,14 +245,14 @@ export default function EditBookPage() {
                   <label className="mb-2 block text-sm font-medium text-slate-300">
                     Penulis
                   </label>
+
                   <input
                     type="text"
                     value={form.author}
                     onChange={(e) =>
                       setForm({ ...form, author: e.target.value })
                     }
-                    placeholder="Masukkan nama penulis"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-blue-500"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                     required
                   />
                 </div>
@@ -209,14 +261,14 @@ export default function EditBookPage() {
                   <label className="mb-2 block text-sm font-medium text-slate-300">
                     Kategori
                   </label>
+
                   <input
                     type="text"
                     value={form.category}
                     onChange={(e) =>
                       setForm({ ...form, category: e.target.value })
                     }
-                    placeholder="Contoh: Novel, Fiksi, Pendidikan"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-blue-500"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                     required
                   />
                 </div>
@@ -224,16 +276,16 @@ export default function EditBookPage() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-300">
-                  Deskripsi Buku
+                  Deskripsi
                 </label>
+
                 <textarea
                   value={form.description}
                   onChange={(e) =>
                     setForm({ ...form, description: e.target.value })
                   }
-                  placeholder="Tuliskan deskripsi atau ringkasan buku"
-                  rows={5}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-blue-500"
+                  rows={4}
+                  className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                   required
                 />
               </div>
@@ -241,141 +293,65 @@ export default function EditBookPage() {
               <div className="grid gap-5 md:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-300">
-                    Ganti Cover Buku
+                    Ganti Cover
                   </label>
 
-                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950 p-4">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setCover(e.target.files?.[0] || null)}
-                      className="w-full text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-yellow-500 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-yellow-600"
-                    />
-
-                    <p className="mt-2 text-xs text-slate-500">
-                      Kosongkan jika tidak ingin mengganti cover lama.
-                    </p>
-
-                    {cover && (
-                      <p className="mt-2 text-xs text-green-400">
-                        Cover baru: {cover.name}
-                      </p>
-                    )}
-                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) =>
+                      handleCoverChange(e.target.files?.[0] || null)
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  />
                 </div>
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-300">
-                    Ganti File PDF
+                    Ganti PDF
                   </label>
 
-                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950 p-4">
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                      className="w-full text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-600"
-                    />
-
-                    <p className="mt-2 text-xs text-slate-500">
-                      Kosongkan jika PDF lama tetap digunakan.
-                    </p>
-
-                    {pdfFile && (
-                      <p className="mt-2 text-xs text-green-400">
-                        PDF baru: {pdfFile.name}
-                      </p>
-                    )}
-                  </div>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  />
                 </div>
               </div>
 
               <div className="flex flex-col gap-3 pt-2 sm:flex-row">
                 <button
                   type="submit"
-                  disabled={updating}
-                  className="flex-1 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+                  disabled={saving}
+                  className="flex-1 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {updating ? "Menyimpan Perubahan..." : "Update Buku"}
+                  {saving ? "Menyimpan..." : "Simpan"}
                 </button>
 
                 <Link
                   href="/dashboard"
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-5 py-3 text-center text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white"
+                  className="flex-1 rounded-xl border border-slate-700 px-5 py-3 text-center text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
                 >
                   Batal
                 </Link>
               </div>
-            </form>
-          </section>
-
-          <aside className="space-y-6">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-              <h3 className="text-xl font-bold text-white">
-                Preview Cover Saat Ini
-              </h3>
-
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                Cover yang sedang tersimpan akan tetap digunakan jika kamu tidak
-                memilih file cover baru.
-              </p>
-
-              <div className="mt-5 flex h-96 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                {oldCoverUrl ? (
-                  <img
-                    src={oldCoverUrl}
-                    alt={form.title}
-                    className="h-full w-full object-contain"
-                  />
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    Cover belum tersedia
-                  </p>
-                )}
-              </div>
             </div>
+          </form>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-              <h3 className="text-xl font-bold text-white">
-                Status File Buku
-              </h3>
+          <aside className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5">
+            <h2 className="mb-4 text-lg font-bold text-white">Preview Cover</h2>
 
-              <div className="mt-5 space-y-4">
-                <div className="rounded-2xl bg-slate-950 p-4">
-                  <p className="text-sm font-semibold text-blue-400">
-                    Cover Buku
-                  </p>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {cover
-                      ? "Cover baru sudah dipilih."
-                      : "Menggunakan cover lama."}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-slate-950 p-4">
-                  <p className="text-sm font-semibold text-blue-400">
-                    File PDF
-                  </p>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {pdfFile
-                      ? "PDF baru sudah dipilih."
-                      : oldPdfUrl
-                      ? "PDF lama masih tersedia."
-                      : "Buku ini belum memiliki file PDF."}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-gradient-to-br from-yellow-500/15 to-slate-950 p-4">
-                  <p className="text-sm font-semibold text-yellow-300">
-                    Catatan Edit
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-slate-400">
-                    Perubahan akan menggantikan data buku lama setelah tombol
-                    Update Buku ditekan. Pastikan data sudah benar sebelum
-                    menyimpan.
-                  </p>
-                </div>
-              </div>
+            <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 p-4">
+              {coverPreview ? (
+                <img
+                  src={coverPreview}
+                  alt="Preview cover"
+                  className="max-h-[320px] w-full object-contain"
+                />
+              ) : (
+                <p className="text-sm text-slate-500">Tidak ada cover</p>
+              )}
             </div>
           </aside>
         </div>
